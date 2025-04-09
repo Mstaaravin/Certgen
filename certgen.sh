@@ -3,11 +3,12 @@
 # Copyright (c) 2025. All rights reserved.
 #
 # Name: generate_cert_with_intermediate.sh
-# Version: 1.0.0
-# Author: Mstaaravin
+# Version: 1.0.2
+# Author: TuNombre
 # Contributors: Developed with assistance from Claude AI
 # Description: Certificate generator with hierarchical CA structure
 #              (Root CA -> Intermediate CA -> Host certificates)
+#              with wildcard certificate support
 #
 # =================================================================
 # Certificate Generator with Intermediate CA
@@ -29,7 +30,7 @@
 # OPTIONS:
 #   -h, --help                Show this help message
 #   -d, --domain DOMAIN       Specify the domain (e.g., example.com)
-#   -n, --hostname NAME       Specify the hostname (e.g., www)
+#   -n, --hostname NAME       Specify the hostname (e.g., www or * for wildcard)
 #   -a, --alt-names "N1 N2"   Specify alternative DNS names (space-separated)
 #   --country CODE            Specify the country code (default: US)
 #   --state STATE             Specify the state/province (default: State)
@@ -44,8 +45,14 @@
 #   # Generate certificate for www.example.com non-interactively:
 #   ./generate_cert_with_intermediate.sh -d example.com -n www -y
 #
+#   # Generate wildcard certificate for *.example.com:
+#   ./generate_cert_with_intermediate.sh -d example.com -n "*" -y
+#
 #   # Generate certificate with alternative names:
 #   ./generate_cert_with_intermediate.sh -d example.com -n www -a "api.example.com admin.example.com"
+#
+#   # Generate certificate with wildcard in alternative names:
+#   ./generate_cert_with_intermediate.sh -d example.com -n www -a "*.example.com api.example.com"
 #
 # FILE DESCRIPTIONS:
 #   - ca.key:             Root CA private key
@@ -65,15 +72,17 @@
 #     stored offline after initial creation.
 #   - This script can create a complete CA infrastructure from scratch
 #     or use existing CA files if found in the appropriate directory.
+#   - Wildcard certificates (*.domain.com) can be created by specifying "*"
+#     as the hostname or by including "*.domain.com" in alternative names.
 # =================================================================
 
 # Script version
-VERSION="1.0.0"
+VERSION="1.0.2"
 
 # Global variables for common data
-COUNTRY="US"
-STATE="State"
-CITY="City"
+COUNTRY="AR"
+STATE="Buenos Aires"
+CITY="CABA"
 ROOT_ORG="Root CA Organization"
 ROOT_OU="Root CA Org Unit"
 INT_ORG="Intermediate Organization"
@@ -112,7 +121,7 @@ Usage: $0 [options]
 Options:
   -h, --help                Show this help message
   -d, --domain DOMAIN       Specify the domain (e.g., example.com)
-  -n, --hostname NAME       Specify the hostname (e.g., www)
+  -n, --hostname NAME       Specify the hostname (e.g., www or * for wildcard)
   -a, --alt-names "N1 N2"   Specify alternative DNS names (space-separated)
   --country CODE            Specify the country code (default: ${COUNTRY})
   --state STATE             Specify the state/province (default: ${STATE})
@@ -126,6 +135,9 @@ Examples:
 
   # Generate certificate for www.example.com non-interactively:
   $0 -d example.com -n www -y
+
+  # Generate wildcard certificate for *.example.com:
+  $0 -d example.com -n "*" -y
 
   # Generate certificate with alternative names:
   $0 -d example.com -n www -a "api.example.com admin.example.com"
@@ -194,6 +206,25 @@ create_dir_if_not_exists() {
     if [ ! -d "$1" ]; then
         mkdir -p "$1"
         echo "Directory created: $1"
+    fi
+}
+
+# Function to handle wildcard certificate names
+format_wildcard_name() {
+    local name="$1"
+    local domain="$2"
+
+    # If it's just a '*', turn it into a proper wildcard for the domain
+    if [[ "$name" == "*" ]]; then
+        echo "*.${domain}"
+    # If it already starts with '*.' (e.g. *.subdomain), keep it as is
+    elif [[ "$name" == "*."* ]]; then
+        echo "$name"
+    # If it's a single '*' with trailing text but no dot (e.g. *api), format as wildcard
+    elif [[ "$name" == "*"* && "$name" != "*."* ]]; then
+        echo "*.${domain}"
+    else
+        echo "$name"
     fi
 }
 
@@ -335,12 +366,16 @@ generate_host_certificate() {
             exit 1
         else
             # Request hostname
-            read -p "Enter the hostname (example: host01): " HOST_NAME
+            read -p "Enter the hostname (example: host01, or * for wildcard): " HOST_NAME
         fi
     fi
 
-    # Build the FQDN
-    if [[ "$HOST_NAME" == *"."* ]]; then
+    # Build the FQDN with special handling for wildcards
+    if [[ "$HOST_NAME" == "*" || "$HOST_NAME" == "*."* ]]; then
+        # Handle wildcard certificate
+        FQDN=$(format_wildcard_name "$HOST_NAME" "$DOMAIN")
+        echo "Generating wildcard certificate for $FQDN..."
+    elif [[ "$HOST_NAME" == *"."* ]]; then
         # If user entered a complete FQDN, use it as is
         FQDN=$HOST_NAME
     else
@@ -348,10 +383,13 @@ generate_host_certificate() {
         FQDN="${HOST_NAME}.${DOMAIN}"
     fi
 
+    # Normalize filename for wildcards (replace * with 'wildcard')
+    CERT_FILENAME=$(echo "${FQDN}" | sed 's/\*\./wildcard./g')
+
     echo "Generating certificate for $FQDN..."
 
     # Create host configuration file
-    cat > ${CERTS_DIR}/${FQDN}.conf <<EOF
+    cat > ${CERTS_DIR}/${CERT_FILENAME}.conf <<EOF
 [req]
 default_bits = ${HOST_KEY_SIZE}
 prompt = no
@@ -382,7 +420,16 @@ EOF
     # First check command-line provided alternative names
     if [ ! -z "$ALT_DNS_NAMES" ]; then
         for ALT_DNS in $ALT_DNS_NAMES; do
-            echo "DNS.$DNS_COUNT = $ALT_DNS" >> ${CERTS_DIR}/${FQDN}.conf
+            # Handle wildcards in alternative names
+            if [[ "$ALT_DNS" == "*" ]]; then
+                ALT_DNS="*.${DOMAIN}"
+                echo "Converting wildcard to: $ALT_DNS"
+            elif [[ "$ALT_DNS" == "*."* ]]; then
+                # Already a properly formatted wildcard, keep as is
+                :
+            fi
+
+            echo "DNS.$DNS_COUNT = $ALT_DNS" >> ${CERTS_DIR}/${CERT_FILENAME}.conf
             DNS_COUNT=$((DNS_COUNT+1))
         done
     elif [ "$NON_INTERACTIVE" = false ]; then
@@ -394,39 +441,50 @@ EOF
                 if [ -z "$ALT_DNS" ]; then
                     break
                 fi
-                echo "DNS.$DNS_COUNT = $ALT_DNS" >> ${CERTS_DIR}/${FQDN}.conf
+
+                # Handle wildcards in alternative names
+                if [[ "$ALT_DNS" == "*" ]]; then
+                    ALT_DNS="*.${DOMAIN}"
+                    echo "Converting wildcard to: $ALT_DNS"
+                elif [[ "$ALT_DNS" == "*"* && "$ALT_DNS" != "*."* ]]; then
+                    # Handle case where user enters *something without a dot
+                    ALT_DNS="*.${DOMAIN}"
+                    echo "Converting to proper wildcard format: $ALT_DNS"
+                fi
+
+                echo "DNS.$DNS_COUNT = $ALT_DNS" >> ${CERTS_DIR}/${CERT_FILENAME}.conf
                 DNS_COUNT=$((DNS_COUNT+1))
             done
         fi
     fi
 
     # Generate host private key
-    openssl genpkey -algorithm RSA -out ${CERTS_DIR}/${FQDN}.key -outform PEM -pkeyopt rsa_keygen_bits:${HOST_KEY_SIZE}
-    chmod 400 ${CERTS_DIR}/${FQDN}.key
-    echo "Private key generated: ${CERTS_DIR}/${FQDN}.key"
+    openssl genpkey -algorithm RSA -out ${CERTS_DIR}/${CERT_FILENAME}.key -outform PEM -pkeyopt rsa_keygen_bits:${HOST_KEY_SIZE}
+    chmod 400 ${CERTS_DIR}/${CERT_FILENAME}.key
+    echo "Private key generated: ${CERTS_DIR}/${CERT_FILENAME}.key"
 
     # Generate host CSR
-    openssl req -new -key ${CERTS_DIR}/${FQDN}.key -out ${CERTS_DIR}/${FQDN}.csr -config ${CERTS_DIR}/${FQDN}.conf
-    echo "CSR generated: ${CERTS_DIR}/${FQDN}.csr"
+    openssl req -new -key ${CERTS_DIR}/${CERT_FILENAME}.key -out ${CERTS_DIR}/${CERT_FILENAME}.csr -config ${CERTS_DIR}/${CERT_FILENAME}.conf
+    echo "CSR generated: ${CERTS_DIR}/${CERT_FILENAME}.csr"
 
     # Sign host CSR with Intermediate CA
-    openssl x509 -req -in ${CERTS_DIR}/${FQDN}.csr -CA ${INT_DIR}/intermediate.crt -CAkey ${INT_DIR}/intermediate.key \
-        -CAcreateserial -out ${CERTS_DIR}/${FQDN}.crt -days ${HOST_CERT_DAYS} -sha256 -extfile ${CERTS_DIR}/${FQDN}.conf -extensions req_ext
-    echo "Certificate signed: ${CERTS_DIR}/${FQDN}.crt"
+    openssl x509 -req -in ${CERTS_DIR}/${CERT_FILENAME}.csr -CA ${INT_DIR}/intermediate.crt -CAkey ${INT_DIR}/intermediate.key \
+        -CAcreateserial -out ${CERTS_DIR}/${CERT_FILENAME}.crt -days ${HOST_CERT_DAYS} -sha256 -extfile ${CERTS_DIR}/${CERT_FILENAME}.conf -extensions req_ext
+    echo "Certificate signed: ${CERTS_DIR}/${CERT_FILENAME}.crt"
 
     # Create complete certificate chain file
-    cat ${CERTS_DIR}/${FQDN}.crt ${INT_DIR}/intermediate.crt ${CA_DIR}/ca.crt > ${CERTS_DIR}/${FQDN}-fullchain.crt
-    echo "Full certificate chain generated: ${CERTS_DIR}/${FQDN}-fullchain.crt"
+    cat ${CERTS_DIR}/${CERT_FILENAME}.crt ${INT_DIR}/intermediate.crt ${CA_DIR}/ca.crt > ${CERTS_DIR}/${CERT_FILENAME}-fullchain.crt
+    echo "Full certificate chain generated: ${CERTS_DIR}/${CERT_FILENAME}-fullchain.crt"
 
     # Create server certificate bundle (for services that need certificate + chain)
-    cat ${CERTS_DIR}/${FQDN}.crt ${INT_DIR}/ca-chain.crt > ${CERTS_DIR}/${FQDN}-chain.crt
-    echo "Certificate with chain generated: ${CERTS_DIR}/${FQDN}-chain.crt"
+    cat ${CERTS_DIR}/${CERT_FILENAME}.crt ${INT_DIR}/ca-chain.crt > ${CERTS_DIR}/${CERT_FILENAME}-chain.crt
+    echo "Certificate with chain generated: ${CERTS_DIR}/${CERT_FILENAME}-chain.crt"
 
     echo "Process completed! Key files are:"
-    echo "- Private key: ${CERTS_DIR}/${FQDN}.key"
-    echo "- Certificate: ${CERTS_DIR}/${FQDN}.crt"
-    echo "- Certificate with intermediate chain: ${CERTS_DIR}/${FQDN}-chain.crt"
-    echo "- Full chain (host + intermediate + CA): ${CERTS_DIR}/${FQDN}-fullchain.crt"
+    echo "- Private key: ${CERTS_DIR}/${CERT_FILENAME}.key"
+    echo "- Certificate: ${CERTS_DIR}/${CERT_FILENAME}.crt"
+    echo "- Certificate with intermediate chain: ${CERTS_DIR}/${CERT_FILENAME}-chain.crt"
+    echo "- Full chain (host + intermediate + CA): ${CERTS_DIR}/${CERT_FILENAME}-fullchain.crt"
 }
 
 # Main execution flow
