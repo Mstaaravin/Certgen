@@ -82,9 +82,9 @@
 VERSION="1.0.3"
 
 # Global variables for common data
-COUNTRY="US"
-STATE="State"
-CITY="City"
+COUNTRY="AR"
+STATE="Buenos Aires"
+CITY="CABA"
 ROOT_ORG="Root CA Organization"
 ROOT_OU="Root CA Org Unit"
 INT_ORG="Intermediate Organization"
