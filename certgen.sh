@@ -3,7 +3,7 @@
 # Copyright (c) 2025. All rights reserved.
 #
 # Name: generate_cert_with_intermediate.sh
-# Version: 1.0.3
+# Version: 1.0.4
 # Author: TuNombre
 # Contributors: Developed with assistance from Claude AI
 # Description: Certificate generator with hierarchical CA structure
@@ -509,9 +509,9 @@ EOF
     echo "Full certificate chain generated: ${CERTS_DIR}/${CERT_FILENAME}-fullchain.crt"
 
     # Create server certificate bundle (for services that need certificate + chain)
-    cat ${CERTS_DIR}/${CERT_FILENAME}.crt ${INT_DIR}/ca-chain.crt > ${CERTS_DIR}/${CERT_FILENAME}-chain.crt || \
-        handle_error "Failed to create certificate with chain"
-    echo "Certificate with chain generated: ${CERTS_DIR}/${CERT_FILENAME}-chain.crt"
+    #cat ${CERTS_DIR}/${CERT_FILENAME}.crt ${INT_DIR}/ca-chain.crt > ${CERTS_DIR}/${CERT_FILENAME}-chain.crt || \
+    #    handle_error "Failed to create certificate with chain"
+    #echo "Certificate with chain generated: ${CERTS_DIR}/${CERT_FILENAME}-chain.crt"
 
     echo "Process completed! Key files are:"
     echo "- Private key: ${CERTS_DIR}/${CERT_FILENAME}.key"
