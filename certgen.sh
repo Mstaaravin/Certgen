@@ -3,12 +3,13 @@
 # Copyright (c) 2025. All rights reserved.
 #
 # Name: generate_cert_with_intermediate.sh
-# Version: 1.0.2
+# Version: 1.0.3
 # Author: TuNombre
 # Contributors: Developed with assistance from Claude AI
 # Description: Certificate generator with hierarchical CA structure
 #              (Root CA -> Intermediate CA -> Host certificates)
 #              with wildcard certificate support
+#              Compatible with OpenSSL 3.x
 #
 # =================================================================
 # Certificate Generator with Intermediate CA
@@ -74,15 +75,16 @@
 #     or use existing CA files if found in the appropriate directory.
 #   - Wildcard certificates (*.domain.com) can be created by specifying "*"
 #     as the hostname or by including "*.domain.com" in alternative names.
+#   - Compatible with OpenSSL 3.x
 # =================================================================
 
 # Script version
-VERSION="1.0.2"
+VERSION="1.0.3"
 
 # Global variables for common data
-COUNTRY="AR"
-STATE="Buenos Aires"
-CITY="CABA"
+COUNTRY="US"
+STATE="State"
+CITY="City"
 ROOT_ORG="Root CA Organization"
 ROOT_OU="Root CA Org Unit"
 INT_ORG="Intermediate Organization"
@@ -111,6 +113,12 @@ NON_INTERACTIVE=false
 
 # Alternative DNS names (space-separated)
 ALT_DNS_NAMES=""
+
+# Error handling function
+handle_error() {
+    echo "ERROR: $1"
+    exit 1
+}
 
 # Function to display help message
 show_help() {
@@ -195,9 +203,7 @@ parse_arguments() {
 # Function to check if a file exists
 check_file_exists() {
     if [ ! -f "$1" ]; then
-        echo "Error: The file $1 does not exist."
-        echo "Please generate the CA certificates first using the appropriate script."
-        exit 1
+        handle_error "The file $1 does not exist."
     fi
 }
 
@@ -279,17 +285,21 @@ CN = ${ROOT_CN}.${DOMAIN}
 
 [v3_ca]
 subjectKeyIdentifier = hash
-authorityKeyIdentifier = keyid:always,issuer:always
 basicConstraints = critical, CA:true
 keyUsage = critical, digitalSignature, cRLSign, keyCertSign
 EOF
 
         # Generate CA private key
-        openssl genpkey -algorithm RSA -out ${CA_DIR}/ca.key -outform PEM -pkeyopt rsa_keygen_bits:${ROOT_KEY_SIZE}
+        openssl genpkey -algorithm RSA -out ${CA_DIR}/ca.key -outform PEM -pkeyopt rsa_keygen_bits:${ROOT_KEY_SIZE} || \
+            handle_error "Failed to generate root CA private key"
         chmod 400 ${CA_DIR}/ca.key
 
         # Generate self-signed CA certificate
-        openssl req -new -x509 -days ${ROOT_CA_DAYS} -key ${CA_DIR}/ca.key -out ${CA_DIR}/ca.crt -config ${CA_DIR}/ca.conf
+        openssl req -new -x509 -days ${ROOT_CA_DAYS} -key ${CA_DIR}/ca.key -out ${CA_DIR}/ca.crt -config ${CA_DIR}/ca.conf || \
+            handle_error "Failed to generate root CA certificate"
+
+        # Verify the certificate was created
+        check_file_exists "${CA_DIR}/ca.crt"
 
         echo "Root CA certificate generated:"
         echo "- Private key: ${CA_DIR}/ca.key"
@@ -321,32 +331,40 @@ CN = ${INT_CN}.${DOMAIN}
 
 [v3_ca]
 subjectKeyIdentifier = hash
-authorityKeyIdentifier = keyid:always,issuer:always
 basicConstraints = critical, CA:true, pathlen:0
 keyUsage = critical, digitalSignature, cRLSign, keyCertSign
 EOF
 
-        # Create Intermediate CA extension file
+        # Create Intermediate CA extension file for signing
         cat > ${INT_DIR}/intermediate_ext.conf <<EOF
+[ v3_intermediate_ca ]
+subjectKeyIdentifier = hash
 basicConstraints = critical, CA:true, pathlen:0
 keyUsage = critical, digitalSignature, cRLSign, keyCertSign
-subjectKeyIdentifier = hash
-authorityKeyIdentifier = keyid:always,issuer:always
 EOF
 
         # Generate Intermediate CA private key
-        openssl genpkey -algorithm RSA -out ${INT_DIR}/intermediate.key -outform PEM -pkeyopt rsa_keygen_bits:${INT_KEY_SIZE}
+        openssl genpkey -algorithm RSA -out ${INT_DIR}/intermediate.key -outform PEM -pkeyopt rsa_keygen_bits:${INT_KEY_SIZE} || \
+            handle_error "Failed to generate intermediate CA private key"
         chmod 400 ${INT_DIR}/intermediate.key
 
         # Generate Intermediate CA CSR
-        openssl req -new -key ${INT_DIR}/intermediate.key -out ${INT_DIR}/intermediate.csr -config ${INT_DIR}/intermediate.conf
+        openssl req -new -key ${INT_DIR}/intermediate.key -out ${INT_DIR}/intermediate.csr -config ${INT_DIR}/intermediate.conf || \
+            handle_error "Failed to generate intermediate CA CSR"
 
         # Sign Intermediate CA CSR with Root CA
-        openssl x509 -req -in ${INT_DIR}/intermediate.csr -CA ${CA_DIR}/ca.crt -CAkey ${CA_DIR}/ca.key -CAcreateserial \
-            -out ${INT_DIR}/intermediate.crt -days ${INT_CA_DAYS} -sha256 -extfile ${INT_DIR}/intermediate_ext.conf
+        openssl x509 -req -in ${INT_DIR}/intermediate.csr \
+            -CA ${CA_DIR}/ca.crt -CAkey ${CA_DIR}/ca.key -CAcreateserial \
+            -out ${INT_DIR}/intermediate.crt -days ${INT_CA_DAYS} -sha256 \
+            -extfile ${INT_DIR}/intermediate_ext.conf -extensions v3_intermediate_ca || \
+            handle_error "Failed to sign intermediate CA certificate"
+
+        # Verify the certificate was created
+        check_file_exists "${INT_DIR}/intermediate.crt"
 
         # Create certificate chain file (intermediate + root)
-        cat ${INT_DIR}/intermediate.crt ${CA_DIR}/ca.crt > ${INT_DIR}/ca-chain.crt
+        cat ${INT_DIR}/intermediate.crt ${CA_DIR}/ca.crt > ${INT_DIR}/ca-chain.crt || \
+            handle_error "Failed to create certificate chain"
 
         echo "Intermediate CA certificate generated:"
         echo "- Private key: ${INT_DIR}/intermediate.key"
@@ -361,12 +379,13 @@ EOF
 generate_host_certificate() {
     if [ -z "$HOST_NAME" ]; then
         if [ "$NON_INTERACTIVE" = true ]; then
-            echo "Error: Hostname is required in non-interactive mode"
-            echo "Use -n or --hostname to specify a hostname"
-            exit 1
+            handle_error "Hostname is required in non-interactive mode. Use -n or --hostname to specify a hostname"
         else
             # Request hostname
             read -p "Enter the hostname (example: host01, or * for wildcard): " HOST_NAME
+            if [ -z "$HOST_NAME" ]; then
+                handle_error "Hostname cannot be empty"
+            fi
         fi
     fi
 
@@ -459,25 +478,39 @@ EOF
     fi
 
     # Generate host private key
-    openssl genpkey -algorithm RSA -out ${CERTS_DIR}/${CERT_FILENAME}.key -outform PEM -pkeyopt rsa_keygen_bits:${HOST_KEY_SIZE}
+    openssl genpkey -algorithm RSA -out ${CERTS_DIR}/${CERT_FILENAME}.key -outform PEM -pkeyopt rsa_keygen_bits:${HOST_KEY_SIZE} || \
+        handle_error "Failed to generate host private key"
     chmod 400 ${CERTS_DIR}/${CERT_FILENAME}.key
     echo "Private key generated: ${CERTS_DIR}/${CERT_FILENAME}.key"
 
     # Generate host CSR
-    openssl req -new -key ${CERTS_DIR}/${CERT_FILENAME}.key -out ${CERTS_DIR}/${CERT_FILENAME}.csr -config ${CERTS_DIR}/${CERT_FILENAME}.conf
+    openssl req -new -key ${CERTS_DIR}/${CERT_FILENAME}.key -out ${CERTS_DIR}/${CERT_FILENAME}.csr -config ${CERTS_DIR}/${CERT_FILENAME}.conf || \
+        handle_error "Failed to generate CSR"
     echo "CSR generated: ${CERTS_DIR}/${CERT_FILENAME}.csr"
 
+    # Verify intermediate cert exists
+    check_file_exists "${INT_DIR}/intermediate.crt"
+    check_file_exists "${INT_DIR}/intermediate.key"
+
     # Sign host CSR with Intermediate CA
-    openssl x509 -req -in ${CERTS_DIR}/${CERT_FILENAME}.csr -CA ${INT_DIR}/intermediate.crt -CAkey ${INT_DIR}/intermediate.key \
-        -CAcreateserial -out ${CERTS_DIR}/${CERT_FILENAME}.crt -days ${HOST_CERT_DAYS} -sha256 -extfile ${CERTS_DIR}/${CERT_FILENAME}.conf -extensions req_ext
+    openssl x509 -req -in ${CERTS_DIR}/${CERT_FILENAME}.csr \
+        -CA ${INT_DIR}/intermediate.crt -CAkey ${INT_DIR}/intermediate.key \
+        -CAcreateserial -out ${CERTS_DIR}/${CERT_FILENAME}.crt -days ${HOST_CERT_DAYS} \
+        -sha256 -extfile ${CERTS_DIR}/${CERT_FILENAME}.conf -extensions req_ext || \
+        handle_error "Failed to sign host certificate"
+
+    # Verify the certificate was created
+    check_file_exists "${CERTS_DIR}/${CERT_FILENAME}.crt"
     echo "Certificate signed: ${CERTS_DIR}/${CERT_FILENAME}.crt"
 
     # Create complete certificate chain file
-    cat ${CERTS_DIR}/${CERT_FILENAME}.crt ${INT_DIR}/intermediate.crt ${CA_DIR}/ca.crt > ${CERTS_DIR}/${CERT_FILENAME}-fullchain.crt
+    cat ${CERTS_DIR}/${CERT_FILENAME}.crt ${INT_DIR}/intermediate.crt ${CA_DIR}/ca.crt > ${CERTS_DIR}/${CERT_FILENAME}-fullchain.crt || \
+        handle_error "Failed to create full certificate chain"
     echo "Full certificate chain generated: ${CERTS_DIR}/${CERT_FILENAME}-fullchain.crt"
 
     # Create server certificate bundle (for services that need certificate + chain)
-    cat ${CERTS_DIR}/${CERT_FILENAME}.crt ${INT_DIR}/ca-chain.crt > ${CERTS_DIR}/${CERT_FILENAME}-chain.crt
+    cat ${CERTS_DIR}/${CERT_FILENAME}.crt ${INT_DIR}/ca-chain.crt > ${CERTS_DIR}/${CERT_FILENAME}-chain.crt || \
+        handle_error "Failed to create certificate with chain"
     echo "Certificate with chain generated: ${CERTS_DIR}/${CERT_FILENAME}-chain.crt"
 
     echo "Process completed! Key files are:"
