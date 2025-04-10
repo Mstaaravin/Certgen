@@ -3,7 +3,7 @@
 # Copyright (c) 2025. All rights reserved.
 #
 # Name: generate_cert_with_intermediate.sh
-# Version: 1.0.4
+# Version: 1.1.0
 # Author: TuNombre
 # Contributors: Developed with assistance from Claude AI
 # Description: Certificate generator with hierarchical CA structure
@@ -33,6 +33,7 @@
 #   -d, --domain DOMAIN       Specify the domain (e.g., example.com)
 #   -n, --hostname NAME       Specify the hostname (e.g., www or * for wildcard)
 #   -a, --alt-names "N1 N2"   Specify alternative DNS names (space-separated)
+#   -p, --parent-domain DOM   Specify a parent domain to use its CA certificates
 #   --country CODE            Specify the country code (default: US)
 #   --state STATE             Specify the state/province (default: State)
 #   --city CITY               Specify the city (default: City)
@@ -52,8 +53,8 @@
 #   # Generate certificate with alternative names:
 #   ./generate_cert_with_intermediate.sh -d example.com -n www -a "api.example.com admin.example.com"
 #
-#   # Generate certificate with wildcard in alternative names:
-#   ./generate_cert_with_intermediate.sh -d example.com -n www -a "*.example.com api.example.com"
+#   # Generate certificate using parent domain's CA:
+#   ./generate_cert_with_intermediate.sh -d dev.example.com -n www -p example.com
 #
 # FILE DESCRIPTIONS:
 #   - ca.key:             Root CA private key
@@ -63,7 +64,6 @@
 #   - ca-chain.crt:       Chain of trust (intermediate + root)
 #   - [host].key:         Host private key
 #   - [host].crt:         Host certificate
-#   - [host]-chain.crt:   Host certificate + intermediate + root
 #   - [host]-fullchain.crt: Host certificate + intermediate + root
 #
 # NOTES:
@@ -76,10 +76,13 @@
 #   - Wildcard certificates (*.domain.com) can be created by specifying "*"
 #     as the hostname or by including "*.domain.com" in alternative names.
 #   - Compatible with OpenSSL 3.x
+#   - The --parent-domain option allows you to use an existing domain's CA
+#     for signing certificates of a subdomain. This maintains consistent
+#     trust relationships between related domains.
 # =================================================================
 
 # Script version
-VERSION="1.0.3"
+VERSION="1.1.0"
 
 # Global variables for common data
 COUNTRY="AR"
@@ -94,6 +97,7 @@ HOST_OU="Host Org Unit"
 ROOT_CN="Root CA"
 INT_CN="Intermediate CA"
 DEFAULT_DOMAIN="lan"
+PARENT_DOMAIN=""
 
 # Certificate durations (in days)
 ROOT_CA_DAYS=3650    # 10 years
@@ -131,6 +135,7 @@ Options:
   -d, --domain DOMAIN       Specify the domain (e.g., example.com)
   -n, --hostname NAME       Specify the hostname (e.g., www or * for wildcard)
   -a, --alt-names "N1 N2"   Specify alternative DNS names (space-separated)
+  -p, --parent-domain DOM   Specify a parent domain to use its CA certificates
   --country CODE            Specify the country code (default: ${COUNTRY})
   --state STATE             Specify the state/province (default: ${STATE})
   --city CITY               Specify the city (default: ${CITY})
@@ -149,6 +154,9 @@ Examples:
 
   # Generate certificate with alternative names:
   $0 -d example.com -n www -a "api.example.com admin.example.com"
+
+  # Generate certificate using parent domain's CA:
+  $0 -d dev.example.com -n www -p example.com
 EOF
     exit 0
 }
@@ -170,6 +178,10 @@ parse_arguments() {
                 ;;
             -a|--alt-names)
                 ALT_DNS_NAMES="$2"
+                shift 2
+                ;;
+            -p|--parent-domain)
+                PARENT_DOMAIN="$2"
                 shift 2
                 ;;
             --country)
@@ -249,21 +261,59 @@ request_domain() {
 
     # Set domain-specific directories
     DOMAIN_DIR="${BASE_DIR}/${DOMAIN}"
-    CA_DIR="${DOMAIN_DIR}/ca"
-    INT_DIR="${DOMAIN_DIR}/intermediate"
     CERTS_DIR="${DOMAIN_DIR}/certs"
 
+    # If a parent domain is specified, use its CA directories
+    if [ ! -z "$PARENT_DOMAIN" ]; then
+        PARENT_DOMAIN_DIR="${BASE_DIR}/${PARENT_DOMAIN}"
+        CA_DIR="${PARENT_DOMAIN_DIR}/ca"
+        INT_DIR="${PARENT_DOMAIN_DIR}/intermediate"
+
+        # Verify parent domain CA exists
+        if [ ! -d "$PARENT_DOMAIN_DIR" ]; then
+            handle_error "Parent domain directory ${PARENT_DOMAIN_DIR} does not exist."
+        fi
+
+        if [ ! -d "$CA_DIR" ] || [ ! -f "${CA_DIR}/ca.key" ] || [ ! -f "${CA_DIR}/ca.crt" ]; then
+            handle_error "Parent domain ${PARENT_DOMAIN} does not have valid CA certificates."
+        fi
+
+        if [ ! -d "$INT_DIR" ] || [ ! -f "${INT_DIR}/intermediate.key" ] || [ ! -f "${INT_DIR}/intermediate.crt" ]; then
+            handle_error "Parent domain ${PARENT_DOMAIN} does not have valid intermediate CA certificates."
+        fi
+
+        echo "Using parent domain: ${PARENT_DOMAIN}"
+        echo "Parent domain CA directory: ${CA_DIR}"
+        echo "Parent domain intermediate CA directory: ${INT_DIR}"
+    else
+        # Use this domain's own CA directories
+        CA_DIR="${DOMAIN_DIR}/ca"
+        INT_DIR="${DOMAIN_DIR}/intermediate"
+    fi
+
     # Create domain-specific directories
-    create_dir_if_not_exists "${CA_DIR}"
-    create_dir_if_not_exists "${INT_DIR}"
+    create_dir_if_not_exists "${DOMAIN_DIR}"
     create_dir_if_not_exists "${CERTS_DIR}"
+
+    # Only create CA directories if not using parent domain
+    if [ -z "$PARENT_DOMAIN" ]; then
+        create_dir_if_not_exists "${CA_DIR}"
+        create_dir_if_not_exists "${INT_DIR}"
+    fi
 
     echo "Using domain: ${DOMAIN}"
     echo "Domain directory: ${DOMAIN_DIR}"
+    echo "Certificates will be stored in: ${CERTS_DIR}"
 }
 
 # Generate Root CA if it doesn't exist
 generate_root_ca() {
+    # Skip CA generation if using parent domain
+    if [ ! -z "$PARENT_DOMAIN" ]; then
+        echo "Using existing Root CA from parent domain ${PARENT_DOMAIN}."
+        return
+    fi
+
     if [ ! -f "${CA_DIR}/ca.key" ] || [ ! -f "${CA_DIR}/ca.crt" ]; then
         echo "Generating Root CA certificate for domain ${DOMAIN}..."
 
@@ -311,6 +361,12 @@ EOF
 
 # Generate Intermediate CA if it doesn't exist
 generate_intermediate_ca() {
+    # Skip intermediate CA generation if using parent domain
+    if [ ! -z "$PARENT_DOMAIN" ]; then
+        echo "Using existing Intermediate CA from parent domain ${PARENT_DOMAIN}."
+        return
+    }
+
     if [ ! -f "${INT_DIR}/intermediate.key" ] || [ ! -f "${INT_DIR}/intermediate.crt" ]; then
         echo "Generating Intermediate CA certificate for domain ${DOMAIN}..."
 
@@ -372,6 +428,13 @@ EOF
         echo "- Certificate chain: ${INT_DIR}/ca-chain.crt"
     else
         echo "Intermediate CA files for domain ${DOMAIN} already exist, using existing ones."
+    fi
+
+    # Ensure ca-chain.crt exists (in case we're using an existing CA that doesn't have it)
+    if [ ! -f "${INT_DIR}/ca-chain.crt" ]; then
+        cat ${INT_DIR}/intermediate.crt ${CA_DIR}/ca.crt > ${INT_DIR}/ca-chain.crt || \
+            handle_error "Failed to create certificate chain"
+        echo "Certificate chain created: ${INT_DIR}/ca-chain.crt"
     fi
 }
 
@@ -508,15 +571,9 @@ EOF
         handle_error "Failed to create full certificate chain"
     echo "Full certificate chain generated: ${CERTS_DIR}/${CERT_FILENAME}-fullchain.crt"
 
-    # Create server certificate bundle (for services that need certificate + chain)
-    #cat ${CERTS_DIR}/${CERT_FILENAME}.crt ${INT_DIR}/ca-chain.crt > ${CERTS_DIR}/${CERT_FILENAME}-chain.crt || \
-    #    handle_error "Failed to create certificate with chain"
-    #echo "Certificate with chain generated: ${CERTS_DIR}/${CERT_FILENAME}-chain.crt"
-
     echo "Process completed! Key files are:"
     echo "- Private key: ${CERTS_DIR}/${CERT_FILENAME}.key"
     echo "- Certificate: ${CERTS_DIR}/${CERT_FILENAME}.crt"
-    echo "- Certificate with intermediate chain: ${CERTS_DIR}/${CERT_FILENAME}-chain.crt"
     echo "- Full chain (host + intermediate + CA): ${CERTS_DIR}/${CERT_FILENAME}-fullchain.crt"
 }
 
@@ -528,7 +585,11 @@ main() {
     parse_arguments "$@"
 
     echo "This script will generate certificates organized by domain"
-    echo "Each domain will have its own CA and certificates structure"
+    if [ ! -z "$PARENT_DOMAIN" ]; then
+        echo "Using parent domain ${PARENT_DOMAIN} CA infrastructure"
+    else
+        echo "Each domain will have its own CA and certificates structure"
+    fi
     echo "==========================================================="
 
     # Request domain and set up directory structure
@@ -544,7 +605,12 @@ main() {
     # Generate host certificate
     generate_host_certificate
 
-    echo "All certificates have been generated in the ${DOMAIN_DIR} directory"
+    if [ ! -z "$PARENT_DOMAIN" ]; then
+        echo "All certificates have been generated in the ${DOMAIN_DIR} directory"
+        echo "These certificates are signed by the ${PARENT_DOMAIN} CA hierarchy"
+    else
+        echo "All certificates have been generated in the ${DOMAIN_DIR} directory"
+    fi
 }
 
 # Call main function with all command line parameters
