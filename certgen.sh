@@ -3,8 +3,8 @@
 # Copyright (c) 2025. All rights reserved.
 #
 # Name: generate_cert_with_intermediate.sh
-# Version: 1.1.0
-# Author: TuNombre
+# Version: 1.1.1
+# Author: Mstaaravin
 # Contributors: Developed with assistance from Claude AI
 # Description: Certificate generator with hierarchical CA structure
 #              (Root CA -> Intermediate CA -> Host certificates)
@@ -17,7 +17,7 @@
 #
 # DESCRIPTION:
 #   This script generates a complete certificate hierarchy:
-#   Root CA -> Intermediate CA -> Host Certificate
+#   Root CA -> Intermediate CA -> Host Certificate (optional)
 #
 #   It organizes certificates by domain in separate directories:
 #   domains/[domain]/
@@ -32,6 +32,7 @@
 #   -h, --help                Show this help message
 #   -d, --domain DOMAIN       Specify the domain (e.g., example.com)
 #   -n, --hostname NAME       Specify the hostname (e.g., www or * for wildcard)
+#                             If omitted, only CA structure will be created
 #   -a, --alt-names "N1 N2"   Specify alternative DNS names (space-separated)
 #   -p, --parent-domain DOM   Specify a parent domain to use its CA certificates
 #   --country CODE            Specify the country code (default: US)
@@ -43,6 +44,9 @@
 # EXAMPLES:
 #   # Interactive mode:
 #   ./generate_cert_with_intermediate.sh
+#
+#   # Generate only CA infrastructure for a domain:
+#   ./generate_cert_with_intermediate.sh -d example.com
 #
 #   # Generate certificate for www.example.com non-interactively:
 #   ./generate_cert_with_intermediate.sh -d example.com -n www -y
@@ -73,6 +77,8 @@
 #     stored offline after initial creation.
 #   - This script can create a complete CA infrastructure from scratch
 #     or use existing CA files if found in the appropriate directory.
+#   - You can create only the CA infrastructure without generating host
+#     certificates by omitting the hostname parameter.
 #   - Wildcard certificates (*.domain.com) can be created by specifying "*"
 #     as the hostname or by including "*.domain.com" in alternative names.
 #   - Compatible with OpenSSL 3.x
@@ -82,15 +88,15 @@
 # =================================================================
 
 # Script version
-VERSION="1.1.0"
+VERSION="1.1.1"
 
 # Global variables for common data
 COUNTRY="AR"
 STATE="Buenos Aires"
 CITY="CABA"
 ROOT_ORG="Root CA Organization"
-ROOT_OU="Root CA Org Unit"
-INT_ORG="Intermediate Organization"
+ROOT_OU="Mstaaravin CA Org Unit"
+INT_ORG="Mstaaravin CA"
 INT_OU="Intermediate Org Unit"
 HOST_ORG="Host Organization"
 HOST_OU="Host Org Unit"
@@ -134,6 +140,7 @@ Options:
   -h, --help                Show this help message
   -d, --domain DOMAIN       Specify the domain (e.g., example.com)
   -n, --hostname NAME       Specify the hostname (e.g., www or * for wildcard)
+                            If omitted, only CA structure will be created
   -a, --alt-names "N1 N2"   Specify alternative DNS names (space-separated)
   -p, --parent-domain DOM   Specify a parent domain to use its CA certificates
   --country CODE            Specify the country code (default: ${COUNTRY})
@@ -145,6 +152,9 @@ Options:
 Examples:
   # Interactive mode:
   $0
+
+  # Generate only CA infrastructure for a domain:
+  $0 -d example.com
 
   # Generate certificate for www.example.com non-interactively:
   $0 -d example.com -n www -y
@@ -365,7 +375,7 @@ generate_intermediate_ca() {
     if [ ! -z "$PARENT_DOMAIN" ]; then
         echo "Using existing Intermediate CA from parent domain ${PARENT_DOMAIN}."
         return
-    }
+    fi
 
     if [ ! -f "${INT_DIR}/intermediate.key" ] || [ ! -f "${INT_DIR}/intermediate.crt" ]; then
         echo "Generating Intermediate CA certificate for domain ${DOMAIN}..."
@@ -440,15 +450,24 @@ EOF
 
 # Generate host certificate
 generate_host_certificate() {
+    # Skip if no hostname provided
     if [ -z "$HOST_NAME" ]; then
-        if [ "$NON_INTERACTIVE" = true ]; then
-            handle_error "Hostname is required in non-interactive mode. Use -n or --hostname to specify a hostname"
-        else
-            # Request hostname
-            read -p "Enter the hostname (example: host01, or * for wildcard): " HOST_NAME
-            if [ -z "$HOST_NAME" ]; then
-                handle_error "Hostname cannot be empty"
+        if [ "$NON_INTERACTIVE" = false ]; then
+            # Ask if user wants to generate a host certificate in interactive mode
+            read -p "Do you want to generate a host certificate? (y/n): " GENERATE_HOST
+            if [[ "$GENERATE_HOST" =~ ^[Yy]$ ]]; then
+                read -p "Enter the hostname (example: host01, or * for wildcard): " HOST_NAME
+                if [ -z "$HOST_NAME" ]; then
+                    echo "No hostname provided. Skipping host certificate generation."
+                    return
+                fi
+            else
+                echo "Skipping host certificate generation."
+                return
             fi
+        else
+            echo "No hostname provided. Skipping host certificate generation."
+            return
         fi
     fi
 
@@ -602,10 +621,17 @@ main() {
     # Generate or use existing Intermediate CA
     generate_intermediate_ca
 
-    # Generate host certificate
+    # Generate host certificate (if hostname provided)
     generate_host_certificate
 
-    if [ ! -z "$PARENT_DOMAIN" ]; then
+    if [ -z "$HOST_NAME" ]; then
+        if [ ! -z "$PARENT_DOMAIN" ]; then
+            echo "CA infrastructure from parent domain ${PARENT_DOMAIN} will be used for future certificates"
+        else
+            echo "CA infrastructure has been successfully created in ${DOMAIN_DIR}"
+            echo "You can now generate host certificates using: $0 -d ${DOMAIN} -n hostname"
+        fi
+    elif [ ! -z "$PARENT_DOMAIN" ]; then
         echo "All certificates have been generated in the ${DOMAIN_DIR} directory"
         echo "These certificates are signed by the ${PARENT_DOMAIN} CA hierarchy"
     else
