@@ -1,10 +1,9 @@
 # Self-signed CA Generator with Intermediate
 
-*Version: 1.3.0 (2025-04-10)*
-
 A Bash script for generating a complete self-signed CA hierarchy with support for wildcard SSL certificates and subdomains.
 
-**For laboratory/learning purposes only.**
+> [!WARNING]
+>For laboratory/learning purposes only.
 
 ## Table of Contents
 
