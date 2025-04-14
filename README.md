@@ -202,7 +202,7 @@ This ensures all certificates are trusted if the client trusts the main domain's
 
 Copyright (c) 2025. All rights reserved.
 
-## Version History
+## README.md Version History
 
 - **1.3.0 (2025-04-10)** - Updated title and description to better reflect the purpose of the script as a self-signed CA generator. Added warning about usage for laboratory/learning purposes only.
 - **1.2.0 (2025-04-10)** - Clarified subdomain directory structure, explaining that subdomain directories only contain host certificates while CA infrastructure remains in the parent domain.
