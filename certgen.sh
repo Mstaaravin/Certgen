@@ -448,6 +448,24 @@ EOF
     fi
 }
 
+# Generate Traefik configuration file for the certificate
+generate_traefik_config() {
+    local cert_filename="$1"
+    local cert_dir="$2"
+    local toml_file="${cert_dir}/${cert_filename}.toml"
+
+    echo "Generating Traefik configuration file..."
+
+    cat > "${toml_file}" <<EOF
+[tls]
+  [[tls.certificates]]
+    certFile = "/etc/traefik/certs/${cert_filename}-fullchain.crt"
+    keyFile = "/etc/traefik/certs/${cert_filename}.key"
+EOF
+
+    echo "Traefik configuration generated: ${toml_file}"
+}
+
 # Generate host certificate
 generate_host_certificate() {
     # Skip if no hostname provided
@@ -590,10 +608,14 @@ EOF
         handle_error "Failed to create full certificate chain"
     echo "Full certificate chain generated: ${CERTS_DIR}/${CERT_FILENAME}-fullchain.crt"
 
+    # Generate Traefik configuration file
+    generate_traefik_config "${CERT_FILENAME}" "${CERTS_DIR}"
+
     echo "Process completed! Key files are:"
     echo "- Private key: ${CERTS_DIR}/${CERT_FILENAME}.key"
     echo "- Certificate: ${CERTS_DIR}/${CERT_FILENAME}.crt"
     echo "- Full chain (host + intermediate + CA): ${CERTS_DIR}/${CERT_FILENAME}-fullchain.crt"
+    echo "- Traefik config: ${CERTS_DIR}/${CERT_FILENAME}.toml"
 }
 
 # Main execution flow
