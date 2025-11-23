@@ -21,6 +21,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CA_DOMAIN=""  # Will be auto-detected or set via parameter
 CA_DIR=""
 INTERMEDIATE_DIR=""
+URL_BASE=""  # Base URL for downloading certificates via HTTP
+TEMP_DIR=""  # Temporary directory for downloaded certificates
 
 # Distribution detection variables
 DISTRO=""
@@ -56,6 +58,8 @@ USAGE:
 OPTIONS:
     -h, --help              Show this help message
     -d, --domain DOMAIN     Specify the CA domain name (e.g., marvin.ar)
+    --url URL              Base URL (host only). The script auto-completes with /domains/DOMAIN/
+                           Example: [URL] (will download from [URL]domains/DOMAIN/...)
     --list-domains          List available domains in the domains/ directory
     --dry-run              Show what would be done without making changes
     -v, --verbose          Enable verbose output
@@ -67,6 +71,12 @@ EXAMPLES:
     # Specify domain explicitly
     $0 -d marvin.ar
 
+    # Download certificates from HTTP server (auto-completes path)
+    $0 -d lan --url http://ip.lan
+    # Downloads from: [URL]domains/lan/ca/ca.crt
+    #                 [URL]domains/lan/intermediate/intermediate.crt
+    #                 [URL]domains/lan/intermediate/ca-chain.crt
+
     # List available domains first
     $0 --list-domains
 
@@ -74,16 +84,24 @@ EXAMPLES:
     $0 -d marvin.ar --dry-run
 
 REQUIREMENTS:
-    - Run from directory containing 'domains/' folder
-    - Domain directory must contain:
+    - Run from directory containing 'domains/' folder OR use --url to download from HTTP
+    - Domain directory must contain (local or via HTTP):
       └── domains/[DOMAIN]/
           ├── ca/ca.crt
           ├── intermediate/intermediate.crt
           └── intermediate/ca-chain.crt
 
+    When using --url:
+    - Provide only the base URL (e.g., [URL])
+    - The script automatically appends: /domains/[DOMAIN]/ca/ca.crt
+    - Example: --url [URL] -d mydom
+      Downloads: [URL]domains/mydom/ca/ca.crt
+                 [URL]domains/mydom/intermediate/intermediate.crt
+                 [URL]domains/mydom/intermediate/ca-chain.crt
+
 SUPPORTED DISTRIBUTIONS:
     - Debian/Ubuntu family (apt)
-    - RHEL/CentOS/Fedora/Oracle Linux (yum/dnf) 
+    - RHEL/CentOS/Fedora/Oracle Linux (yum/dnf)
     - SUSE/openSUSE (zypper)
     - Arch Linux (pacman)
     - Alpine Linux (apk)
@@ -206,6 +224,17 @@ parse_arguments() {
                 CA_DOMAIN="$2"
                 shift 2
                 ;;
+            --url)
+                if [[ -z "$2" ]]; then
+                    print_message $RED "Error: --url requires a URL"
+                    print_message $YELLOW "Usage: $0 --url http://192.168.1.100"
+                    exit 1
+                fi
+                URL_BASE="$2"
+                # Remove trailing slash if present
+                URL_BASE="${URL_BASE%/}"
+                shift 2
+                ;;
             --list-domains)
                 list_domains
                 ;;
@@ -226,6 +255,95 @@ parse_arguments() {
     done
 }
 
+# Function to download certificates from HTTP URL
+download_certificates_from_url() {
+    if [[ -z "$URL_BASE" ]]; then
+        return 0  # No URL specified, skip download
+    fi
+
+    print_message $BLUE "Downloading certificates from: $URL_BASE"
+
+    # Check for download tool (curl or wget)
+    local DOWNLOAD_CMD=""
+    if command -v curl &> /dev/null; then
+        DOWNLOAD_CMD="curl"
+    elif command -v wget &> /dev/null; then
+        DOWNLOAD_CMD="wget"
+    else
+        print_message $RED "Error: Neither curl nor wget found"
+        print_message $YELLOW "Please install curl or wget to download certificates"
+        exit 1
+    fi
+
+    print_message $BLUE "Using download tool: $DOWNLOAD_CMD"
+
+    # Create temporary directory
+    TEMP_DIR=$(mktemp -d -t ca-certificates-XXXXXX)
+    if [[ $? -ne 0 ]]; then
+        print_message $RED "Error: Failed to create temporary directory"
+        exit 1
+    fi
+
+    print_message $BLUE "Created temporary directory: $TEMP_DIR"
+
+    # Create directory structure
+    mkdir -p "${TEMP_DIR}/domains/${CA_DOMAIN}/ca"
+    mkdir -p "${TEMP_DIR}/domains/${CA_DOMAIN}/intermediate"
+
+    # Define files to download
+    local files=(
+        "domains/${CA_DOMAIN}/ca/ca.crt"
+        "domains/${CA_DOMAIN}/intermediate/intermediate.crt"
+        "domains/${CA_DOMAIN}/intermediate/ca-chain.crt"
+    )
+
+    # Download each file
+    local download_failed=false
+    for file in "${files[@]}"; do
+        local url="${URL_BASE}/${file}"
+        local dest="${TEMP_DIR}/${file}"
+
+        print_message $BLUE "Downloading: $url"
+
+        if [[ "$DOWNLOAD_CMD" == "curl" ]]; then
+            if ! curl -f -sS -o "$dest" "$url"; then
+                print_message $RED "✗ Failed to download: $url"
+                download_failed=true
+            else
+                print_message $GREEN "✓ Downloaded: $(basename $file)"
+            fi
+        else  # wget
+            if ! wget -q -O "$dest" "$url"; then
+                print_message $RED "✗ Failed to download: $url"
+                download_failed=true
+            else
+                print_message $GREEN "✓ Downloaded: $(basename $file)"
+            fi
+        fi
+    done
+
+    if [[ "$download_failed" == "true" ]]; then
+        print_message $RED "Error: Failed to download one or more certificate files"
+        print_message $YELLOW "Please check:"
+        print_message $YELLOW "  1. The URL is correct and accessible: $URL_BASE"
+        print_message $YELLOW "  2. The domain directory exists on the server: domains/${CA_DOMAIN}/"
+        print_message $YELLOW "  3. The certificate files exist in the correct locations"
+        cleanup_temp_dir
+        exit 1
+    fi
+
+    print_message $GREEN "✓ All certificates downloaded successfully"
+}
+
+# Function to cleanup temporary directory
+cleanup_temp_dir() {
+    if [[ -n "$TEMP_DIR" ]] && [[ -d "$TEMP_DIR" ]]; then
+        print_message $BLUE "Cleaning up temporary directory: $TEMP_DIR"
+        rm -rf "$TEMP_DIR"
+        print_message $GREEN "✓ Temporary files cleaned up"
+    fi
+}
+
 # Function to set up domain paths after domain is determined
 setup_domain_paths() {
     if [[ -z "$CA_DOMAIN" ]]; then
@@ -233,11 +351,19 @@ setup_domain_paths() {
         print_message $YELLOW "Use $0 --help for usage information"
         exit 1
     fi
-    
-    CA_DIR="${SCRIPT_DIR}/domains/${CA_DOMAIN}/ca"
-    INTERMEDIATE_DIR="${SCRIPT_DIR}/domains/${CA_DOMAIN}/intermediate"
-    
+
+    # Use TEMP_DIR if downloading from URL, otherwise use SCRIPT_DIR
+    local base_dir="${TEMP_DIR:-$SCRIPT_DIR}"
+
+    CA_DIR="${base_dir}/domains/${CA_DOMAIN}/ca"
+    INTERMEDIATE_DIR="${base_dir}/domains/${CA_DOMAIN}/intermediate"
+
     print_message $BLUE "Using domain: $CA_DOMAIN"
+    if [[ -n "$URL_BASE" ]]; then
+        print_message $BLUE "Source: $URL_BASE (downloaded to temporary location)"
+    else
+        print_message $BLUE "Source: Local directory"
+    fi
     print_message $BLUE "CA directory: $CA_DIR"
     print_message $BLUE "Intermediate directory: $INTERMEDIATE_DIR"
 }
@@ -658,29 +784,45 @@ main() {
     print_message $GREEN "Universal CA Certificate Installation Script v1.0.0"
     print_message $GREEN "===================================================="
     echo
-    
+
+    # Set up trap to cleanup temporary files on exit or error
+    trap cleanup_temp_dir EXIT INT TERM
+
     # Parse command line arguments first
     parse_arguments "$@"
-    
-    # If no domain specified, try to auto-detect
-    if [[ -z "$CA_DOMAIN" ]]; then
+
+    # If no domain specified and not using URL, try to auto-detect
+    if [[ -z "$CA_DOMAIN" ]] && [[ -z "$URL_BASE" ]]; then
         auto_detect_domain
     fi
-    
+
+    # If using URL, domain is required
+    if [[ -n "$URL_BASE" ]] && [[ -z "$CA_DOMAIN" ]]; then
+        print_message $RED "Error: When using --url, you must specify --domain"
+        print_message $YELLOW "Usage: $0 --url http://192.168.1.100 --domain marvin.ar"
+        exit 1
+    fi
+
+    # Download certificates from URL if specified
+    if [[ -n "$URL_BASE" ]]; then
+        download_certificates_from_url
+    fi
+
     # Set up domain paths
     setup_domain_paths
-    
+
     # Detect distribution
     detect_distribution
     echo
-    
-    # Verify we're in the right directory and domain exists
-    if [[ ! -d "domains/${CA_DOMAIN}" ]]; then
+
+    # Verify we're in the right directory and domain exists (skip if using URL)
+    if [[ -z "$URL_BASE" ]] && [[ ! -d "domains/${CA_DOMAIN}" ]]; then
         print_message $RED "Error: Certificate directory 'domains/${CA_DOMAIN}' not found."
         print_message $YELLOW "Available options:"
         print_message $YELLOW "  1. Run '$0 --list-domains' to see available domains"
         print_message $YELLOW "  2. Use certificate generator to create certificates for this domain"
         print_message $YELLOW "  3. Ensure you're in the correct directory containing 'domains/' folder"
+        print_message $YELLOW "  4. Use --url to download certificates from an HTTP server"
         exit 1
     fi
     
