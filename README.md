@@ -1,210 +1,179 @@
-# Self-signed CA Generator with Intermediate
+# Local PKI & Certificate Management Scripts
 
-A Bash script for generating a complete self-signed CA hierarchy with support for wildcard SSL certificates and subdomains.
+A collection of Bash scripts for creating and managing a local Public Key
+Infrastructure (PKI). These tools allow you to generate certificate
+hierarchies, deploy them to remote hosts, and install them on client machines.
 
 > [!WARNING]
->For laboratory/learning purposes only.
+> For development, lab, and learning purposes only. Do not use for production
+> environments that require publicly trusted certificates.
 
-## Table of Contents
+## Scripts Overview
 
-- [Overview](#overview)
-- [Features](#features)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Basic Usage](#basic-usage)
-  - [Usage Examples](#usage-examples)
-- [Certificate Structure](#certificate-structure)
-- [Generated Files](#generated-files)
-- [Options](#options)
-- [Subdomains](#subdomains)
-- [Notes](#notes)
-- [License](#license)
+This project includes the following scripts, designed to be used together:
 
-## Overview
+| Script                                 | Description                                                              |
+| -------------------------------------- | ------------------------------------------------------------------------ |
+| `certgen.sh`                           | Generates a full certificate hierarchy (Root CA → Intermediate CA → Host). |
+| `copy_certs.sh`                        | Copies host certificates (`.crt`, `.key`, `.toml`) to a remote server.     |
+| `install-ca-certificates-universal.sh` | Installs the Root and Intermediate CAs into the system trust store.        |
+| `verify-ca-installation.sh`            | Checks if the custom CA is correctly installed and trusted by the system.  |
 
-This script generates a complete certificate hierarchy:
-- Root CA → Intermediate CA → Host Certificate (optional)
+## Common Workflow
 
-It organizes certificates by domain in separate directories, making certificate management easier.
+Here is a typical workflow for generating a certificate and deploying it.
 
-## Features
+---
 
-- Full certificate hierarchy creation (Root CA → Intermediate CA → Host certs)
-- Domain-specific certificate organization
-- Wildcard certificate support
-- Alternative DNS names support
-- Parent domain CA reuse for subdomain certificates
-- Interactive and non-interactive modes
-- OpenSSL 3.x compatibility
+### 1. Generate Certificates
 
-## Requirements
+First, create a certificate hierarchy for your domain. This command generates a new Root CA and Intermediate CA for `yourdomain.lan`, then uses them to sign a wildcard certificate for `*.yourdomain.lan`.
 
-- Bash shell environment
-- OpenSSL 3.x
-
-## Installation
-
-1. Download the script:
-   ```
-   curl -O https://raw.githubusercontent.com/Mstaaravin/certgen/main/certgen.sh
-   ```
-
-2. Make it executable:
-   ```
-   chmod +x certgen.sh
-   ```
-
-## Usage
-
-### Basic Usage
-
-```
-./certgen.sh [options]
+```bash
+bash certgen.sh -d yourdomain.lan -n '*'
 ```
 
-### Usage Examples
+All necessary files are created inside the `domains/yourdomain.lan/` directory, which contains subdirectories for the `ca`, `intermediate`, and `certs`.
 
-#### Interactive Mode:
-```
-./certgen.sh
-```
-
-#### Generate Only CA Infrastructure for a Domain:
-```
-./certgen.sh -d example.com
-```
-
-#### Generate Certificate for www.example.com Non-interactively:
-```
-./certgen.sh -d example.com -n www -y
-```
-
-#### Generate Wildcard Certificate for *.example.com:
-```
-./certgen.sh -d example.com -n "*" -y
-```
-
-#### Generate Certificate with Alternative Names:
-```
-./certgen.sh -d example.com -n www -a "api.example.com admin.example.com"
-```
-
-#### Generate Certificate Using Parent Domain's CA:
-```
-./certgen.sh -d dev.example.com -n www -p example.com
-```
-
-## Certificate Structure
-
-Certificates are organized by domain in separate directories:
-```
-domains/[domain]/
-  ├── ca/                # Root CA files
-  ├── intermediate/      # Intermediate CA files
-  └── certs/             # Host certificates
-```
-
-## Generated Files
-
-- **ca.key**: Root CA private key
-- **ca.crt**: Root CA certificate
-- **intermediate.key**: Intermediate CA private key
-- **intermediate.crt**: Intermediate CA certificate
-- **ca-chain.crt**: Chain of trust (intermediate + root)
-- **[host].key**: Host private key
-- **[host].crt**: Host certificate
-- **[host]-fullchain.crt**: Host certificate + intermediate + root
-
-## Options
-
-| Option | Description |
-|--------|-------------|
-| `-h`, `--help` | Show help message |
-| `-d`, `--domain DOMAIN` | Specify the domain (e.g., example.com) |
-| `-n`, `--hostname NAME` | Specify the hostname (e.g., www or * for wildcard) |
-| `-a`, `--alt-names "N1 N2"` | Specify alternative DNS names (space-separated) |
-| `-p`, `--parent-domain DOM` | Specify a parent domain to use its CA certificates |
-| `--country CODE` | Specify the country code (default: AR) |
-| `--state STATE` | Specify the state/province (default: Buenos Aires) |
-| `--city CITY` | Specify the city (default: CABA) |
-| `--org ORG` | Specify the organization (default: Host Organization) |
-| `-y`, `--yes` | Non-interactive mode (use defaults) |
-
-## Subdomains
-
-The script supports a parent-child domain relationship for certificate hierarchies, which is useful when you have multiple related domains that should share the same trust infrastructure.
-
-### How Subdomains Work
-
-When you use the `-p` or `--parent-domain` option:
-
-1. The script uses the CA infrastructure (Root CA and Intermediate CA) from the specified parent domain.
-2. New certificates for the subdomain are signed using the parent domain's Intermediate CA.
-3. This creates a consistent chain of trust across your main domain and all subdomains.
-
-### Directory Structure for Subdomains
-
-When using the parent domain option, the directory structure is optimized:
+<details>
+<summary><b>Click to see example output</b></summary>
 
 ```
-domains/
-  ├── example.com/               # Parent domain
-  │   ├── ca/                    # Root CA files
-  │   ├── intermediate/          # Intermediate CA files
-  │   └── certs/                 # Host certificates for parent domain
-  │
-  └── dev.example.com/           # Subdomain
-      └── certs/                 # ONLY host certificates for this subdomain
+cmiranda@lhome01 ~/Projects/git.certgen (main)$ ./certgen.sh -d lan -n owncloud -y
+=== Certificate Generator with CA → Intermediate → Host hierarchy v1.1.1 ===
+This script will generate certificates organized by domain
+Each domain will have its own CA and certificates structure
+===========================================================
+Using domain: lan
+Domain directory: domains/lan
+Certificates will be stored in: domains/lan/certs
+CA files for domain lan already exist, using existing ones.
+Intermediate CA files for domain lan already exist, using existing ones.
+Generating certificate for owncloud.lan...
+..+++++++++++++++++++++++++++++++++++++++*.+.......+++++++++++++++++++++++++++++++++++++++*.......
+....+.+............+...+.....+.........+.............+..+.+..+.+......+...+...........+....+......
+Private key generated: domains/lan/certs/owncloud.lan.key
+CSR generated: domains/lan/certs/owncloud.lan.csr
+Certificate request self-signature ok
+subject=C=AR, ST=Buenos Aires, L=CABA, O=Host Organization, OU=Host Org Unit, CN=owncloud.lan
+Certificate signed: domains/lan/certs/owncloud.lan.crt
+Full certificate chain generated: domains/lan/certs/owncloud.lan-fullchain.crt
+Generating Traefik configuration file...
+Traefik configuration generated: domains/lan/certs/owncloud.lan.toml
+Process completed! Key files are:
+- Private key: domains/lan/certs/owncloud.lan.key
+- Certificate: domains/lan/certs/owncloud.lan.crt
+- Full chain (host + intermediate + CA): domains/lan/certs/owncloud.lan-fullchain.crt
+- Traefik config: domains/lan/certs/owncloud.lan.toml
+All certificates have been generated in the domains/lan directory
 ```
+</details>
+---
 
-**Important**: When using the `-p` option, the subdomain directory will **only** contain the host certificates. The CA and intermediate certificates/keys are not duplicated but instead referenced from the parent domain directory. This ensures a more efficient and consistent certificate hierarchy.
+### 2. Deploy Certificate to a Remote Server
 
-### Benefits
+Next, copy the generated host certificate files to your server (e.g., a reverse proxy or web server) using its SSH alias. The script dynamically finds the correct files based on the domain name.
 
-- **Consistent Trust Chain**: All subdomains share the same root of trust.
-- **Simplified Management**: You only need to distribute one Root CA certificate to trust all related domains.
-- **Organized Structure**: Each domain maintains its own directory for host certificates while sharing the CA infrastructure.
-- **Storage Efficiency**: CA certificates and keys are not duplicated across subdomains.
+```bash
+bash copy_certs.sh your-ssh-alias -d wildcard.yourdomain.lan
+```
+> [!NOTE]
+> The remote destination path and file ownership (UID/GID) can be configured as global variables inside the `copy_certs.sh` script.<br />
+> UID/GID numbers is because at my destination servers, those files are shared as mount bind directory inside LXC Proxmox container
 
-### Example Scenario
-
-Imagine you have:
-- A main domain: `example.com`
-- Multiple environments: `dev.example.com`, `staging.example.com`, `test.example.com`
-
-You can first create the CA infrastructure for the main domain:
+<details>
+<summary><b>Click to see example output</b></summary>
 
 ```
-./certgen.sh -d example.com
+cmiranda@lhome01 ~/Projects/git.certgen (main)$ ./copy_certs.sh pve01 -d owncloud.lan
+Searching for certificate files for domain 'owncloud.lan'...
+  [OK] Found: domains/lan/certs/owncloud.lan-fullchain.crt
+  [OK] Found: domains/lan/certs/owncloud.lan.key
+  [OK] Found: domains/lan/certs/owncloud.lan.toml
+
+Starting certificate copy to 'pve01' at path '/shared/traefik/config/certs/'...
+Copying owncloud.lan-fullchain.crt...
+Setting ownership for owncloud.lan-fullchain.crt to 100000:100000...
+Copying owncloud.lan.key...
+Setting ownership for owncloud.lan.key to 100000:100000...
+Copying owncloud.lan.toml...
+Setting ownership for owncloud.lan.toml to 100000:100000...
+
+Success! All files have been copied correctly.
 ```
+</details>
 
-Then generate certificates for each environment using the parent domain's CA:
+---
+
+### 3. Install CA on Your Local/Client Machine
+
+To make browsers and system tools trust your new certificates, install the Root and Intermediate CAs on your client machine. The script detects your Linux distribution and installs the CAs in the correct system-wide location.
+
+```bash
+# This command requires sudo privileges
+sudo bash install-ca-certificates-universal.sh -d yourdomain.lan
+```
+You can also use the `--url` flag to install certificates from a remote HTTP server instead of a local directory.
+
+<details>
+<summary><b>Click to see example output</b></summary>
 
 ```
-./certgen.sh -d dev.example.com -n www -p example.com
-./certgen.sh -d staging.example.com -n www -p example.com
-./certgen.sh -d test.example.com -n www -p example.com
+Universal CA Certificate Installation Script v1.0.0
+====================================================
+
+✓ Auto-detected domain: yourdomain.lan
+✓ Detected: ubuntu (debian family)
+  Package Manager: apt
+  CA Path: /usr/local/share/ca-certificates
+  Update Command: update-ca-certificates
+...
+✓ Root CA certificate installed: /usr/local/share/ca-certificates/yourdomain.lan-root-ca.crt
+✓ Intermediate CA certificate installed: /usr/pve/local/share/ca-certificates/yourdomain.lan-intermediate-ca.crt
+Updating system certificate store using: update-ca-certificates
+...
+✓ System certificate store updated successfully!
+
+Post-Installation Instructions:
+===============================
+1. System certificates have been installed for: ubuntu (debian)
+...
 ```
+</details>
 
-This ensures all certificates are trusted if the client trusts the main domain's Root CA.
+---
 
-## Notes
+### 4. Verify the Installation
 
-- The ca-chain.crt file contains the intermediate certificate concatenated with the root CA certificate.
-- Keep your CA private keys secure. The root CA key should ideally be stored offline after initial creation.
-- This script can create a complete CA infrastructure from scratch or use existing CA files if found in the appropriate directory.
-- You can create only the CA infrastructure without generating host certificates by omitting the hostname parameter.
-- Wildcard certificates (*.domain.com) can be created by specifying "*" as the hostname.
-- These certificates are self-signed and intended for development, testing, or educational environments only. They will not be trusted by browsers or systems without manually adding the CA certificate to their trust stores.
+Finally, run the verification script to ensure your system and tools like `curl` and `openssl` correctly trust the newly installed CA.
 
-## License
+```bash
+bash verify-ca-installation.sh -d yourdomain.lan
+```
+This script runs a comprehensive suite of tests, from checking file existence to verifying trust in the system's CA bundle.
 
-Copyright (c) 2025. All rights reserved.
+<details>
+<summary><b>Click to see example output</b></summary>
 
-## README.md Version History
+```
+CA Certificate Installation Verification v1.0.0
+=================================================
+✓ Auto-detected domain: yourdomain.lan
+Detected: ubuntu (debian family)
+...
+[1] Testing: Source Certificate Files
+============================================================
+✓ PASS: All source certificate files found
 
-- **1.3.0 (2025-04-10)** - Updated title and description to better reflect the purpose of the script as a self-signed CA generator. Added warning about usage for laboratory/learning purposes only.
-- **1.2.0 (2025-04-10)** - Clarified subdomain directory structure, explaining that subdomain directories only contain host certificates while CA infrastructure remains in the parent domain.
-- **1.1.0 (2025-04-10)** - Added detailed section on subdomain functionality with examples and benefits.
-- **1.0.0** - Initial documentation release.
+[2] Testing: Certificate Validity
+============================================================
+✓ PASS: All certificates are valid and chain correctly
+...
+VERIFICATION SUMMARY
+====================
+✓ Passed: 9/9 tests
+
+✓ OVERALL STATUS: ALL TESTS PASSED
+Your CA certificates are properly installed and configured!
+```
+</details>
