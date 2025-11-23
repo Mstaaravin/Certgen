@@ -46,72 +46,43 @@ print_message() {
 # Function to display help message
 show_help() {
     cat << EOF
-Universal CA Certificate Installation Script v1.0.0
+Universal CA Certificate Installation Script (v1.0.0)
 
-DESCRIPTION:
-    Install custom CA certificates in the system trust store across multiple Linux distributions.
-    Supports Debian/Ubuntu, RHEL/CentOS/Fedora/Oracle Linux, SUSE/openSUSE, and Arch Linux.
+Installs custom CA certificates into the system's trust store.
+Supports Debian, Ubuntu, RHEL, CentOS, Fedora, SUSE, Arch, and Alpine.
 
 USAGE:
     $0 [OPTIONS]
 
 OPTIONS:
-    -h, --help              Show this help message
-    -d, --domain DOMAIN     Specify the CA domain name (e.g., marvin.ar)
-    --url URL              Base URL (host only). The script auto-completes with /domains/DOMAIN/
-                           Example: [URL] (will download from [URL]domains/DOMAIN/...)
-    --list-domains          List available domains in the domains/ directory
-    --dry-run              Show what would be done without making changes
-    -v, --verbose          Enable verbose output
+    -h, --help              Show this help message.
+    -d, --domain DOMAIN     Specify the CA domain (e.g., marvin.ar).
+    --url URL               Download certs from a base URL instead of using local files.
+    --list-domains          List available local domains.
+    --dry-run               Show what would be done, without making changes.
+    -v, --verbose           Enable verbose output.
 
 EXAMPLES:
-    # Auto-detect domain (if only one exists)
+    # Install from a local domain (auto-detects if only one exists)
     $0
-
-    # Specify domain explicitly
     $0 -d marvin.ar
 
-    # Download certificates from HTTP server (auto-completes path)
+    # Install by downloading from a URL
     $0 -d lan --url http://ip.lan
-    # Downloads from: [URL]domains/lan/ca/ca.crt
-    #                 [URL]domains/lan/intermediate/intermediate.crt
-    #                 [URL]domains/lan/intermediate/ca-chain.crt
 
-    # List available domains first
-    $0 --list-domains
-
-    # Dry run to see what would happen
+    # See what the script would do without installing
     $0 -d marvin.ar --dry-run
 
-REQUIREMENTS:
-    - Run from directory containing 'domains/' folder OR use --url to download from HTTP
-    - Domain directory must contain (local or via HTTP):
-      └── domains/[DOMAIN]/
-          ├── ca/ca.crt
-          ├── intermediate/intermediate.crt
-          └── intermediate/ca-chain.crt
+HOW IT WORKS:
+    The script requires three certificate files:
+    1. Root CA:      .../ca/ca.crt
+    2. Intermediate: .../intermediate/intermediate.crt
+    3. CA Chain:     .../intermediate/ca-chain.crt
 
-    When using --url:
-    - Provide only the base URL (e.g., [URL])
-    - The script automatically appends: /domains/[DOMAIN]/ca/ca.crt
-    - Example: --url [URL] -d mydom
-      Downloads: [URL]domains/mydom/ca/ca.crt
-                 [URL]domains/mydom/intermediate/intermediate.crt
-                 [URL]domains/mydom/intermediate/ca-chain.crt
+    - Local Mode: Looks for these files in './domains/[DOMAIN]/'.
+    - URL Mode:   Downloads them from '[URL]/domains/[DOMAIN]/...'.
 
-SUPPORTED DISTRIBUTIONS:
-    - Debian/Ubuntu family (apt)
-    - RHEL/CentOS/Fedora/Oracle Linux (yum/dnf)
-    - SUSE/openSUSE (zypper)
-    - Arch Linux (pacman)
-    - Alpine Linux (apk)
-
-NOTES:
-    - Requires sudo privileges for system-wide installation
-    - Creates automatic backups before making changes
-    - Certificates will be installed in distribution-specific locations
-    - Run verify-ca-installation script after installation to confirm success
-
+    Requires sudo/root privileges to modify the system trust store.
 EOF
     exit 0
 }
