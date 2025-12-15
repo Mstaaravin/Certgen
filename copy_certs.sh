@@ -17,10 +17,13 @@
 # --- GLOBAL CONFIGURATION ---
 # IMPORTANT! Modify these paths and values according to your needs.
 # Path on the remote server where certificates will be copied.
-REMOTE_DEST_PATH="/shared/traefik/config/certs/"
+#REMOTE_DEST_PATH="/shared/traefik/config/certs/"
+REMOTE_DEST_PATH="/docker/traefik/certs/"
 # UID and GID for the remote files. Leave empty to skip ownership change.
-REMOTE_UID="100000"
-REMOTE_GID="100000"
+#REMOTE_UID="100000"
+#REMOTE_GID="100000"
+REMOTE_UID="0"
+REMOTE_GID="0"
 
 # --- INPUT VALIDATION AND ARGUMENT PARSING ---
 
