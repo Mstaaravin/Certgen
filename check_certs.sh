@@ -1,10 +1,27 @@
 #!/bin/bash
 
-# Function to display usage
-usage() {
+# Function to display help
+display_help() {
     echo "Usage: $0 [certificate_file.crt]"
-    echo "  If no file is provided, it will prompt you to enter the path."
-    exit 1
+    echo ""
+    echo "Checks the validity and details of an X.509 certificate."
+    echo "If no file is provided, this help message is displayed."
+    echo ""
+    echo "Arguments:"
+    echo "  certificate_file.crt   Path to the certificate file to check."
+    echo ""
+    echo "Options:"
+    echo "  -h, --help             Display this help and exit."
+    echo ""
+    echo "Examples:"
+    echo "  # Check a specific certificate file"
+    echo "  $0 domains/lan/certs/minio.lan.crt"
+    echo ""
+    echo "  # Check a certificate from a different location"
+    echo "  $0 /tmp/my_other_cert.pem"
+    echo ""
+    echo "  # Show this help message"
+    echo "  $0 --help"
 }
 
 # Check if openssl is installed
@@ -14,30 +31,24 @@ then
     exit 1
 fi
 
-CERT_FILE=""
+# Check for no arguments or help flag
+if [ -z "$1" ] || [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
+    display_help
+    exit 0
+fi
 
-# Check if a certificate file was passed as an argument
-if [ -n "$1" ]; then
-    CERT_FILE="$1"
-    if [ ! -f "$CERT_FILE" ]; then
-        echo "Error: Certificate file '$CERT_FILE' not found."
-        exit 1
-    fi
-else
-    # Prompt user for certificate file path
-    read -p "Enter the path to the certificate file (e.g., ./deluged.lan.crt): " CERT_FILE
+CERT_FILE="$1"
 
-    # Validate if the file exists
-    if [ ! -f "$CERT_FILE" ]; then
-        echo "Error: Certificate file '$CERT_FILE' not found."
-        exit 1
-    fi
+# Validate if the file exists
+if [ ! -f "$CERT_FILE" ]; then
+    echo "Error: Certificate file '$CERT_FILE' not found."
+    exit 1
 fi
 
 # --- Extract Certificate Information ---
 CN=$(openssl x509 -in "$CERT_FILE" -subject -noout | sed -n '/CN=/s/.*CN=\([^/]*\).*/\1/p')
-NOT_BEFORE=$(openssl x509 -in "$CERT_FILE" -dates -noout | grep 'Not Before' | cut -d' ' -f4-)
-NOT_AFTER=$(openssl x509 -in "$CERT_FILE" -dates -noout | grep 'Not After' | cut -d' ' -f4-)
+NOT_BEFORE=$(openssl x509 -in "$CERT_FILE" -dates -noout | grep 'notBefore' | cut -d= -f2)
+NOT_AFTER=$(openssl x509 -in "$CERT_FILE" -dates -noout | grep 'notAfter' | cut -d= -f2)
 
 # Convert dates to epoch for comparison
 # Note: 'date -d' requires GNU date. On macOS, use 'gdate -d' or adjust.
