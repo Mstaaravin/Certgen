@@ -3,7 +3,9 @@
 # ==============================================================================
 # Script to securely copy generated certificates to a remote host.
 #
-# Usage: ./copy_certs.sh <ssh_alias> -d <domain>
+# Usage:
+#       ./copy_certs.sh <ssh_alias> -d <domain>
+#       ./copy_certs.sh user@host -d <domain>
 #
 # Parameters:
 #   <ssh_alias> : The alias configured in your ~/.ssh/config for the remote host.
@@ -18,7 +20,7 @@
 # IMPORTANT! Modify these paths and values according to your needs.
 # Path on the remote server where certificates will be copied.
 #REMOTE_DEST_PATH="/shared/traefik/config/certs/"
-REMOTE_DEST_PATH="/docker/config/certs/"
+REMOTE_DEST_PATH="/docker/traefik/certs/"
 # UID and GID for the remote files. Leave empty to skip ownership change.
 #REMOTE_UID="100000"
 #REMOTE_GID="100000"
@@ -30,7 +32,7 @@ REMOTE_GID="0"
 # Function to display help message
 show_help() {
     cat << EOF
-Usage: ./copy_certs.sh <ssh_alias> [OPTIONS]
+Usage: ./copy_certs.sh user@host [OPTIONS]
 
 Options:
   -d, --domain DOMAIN       Specify the domain (e.g., immich.lan) whose
@@ -43,7 +45,7 @@ Arguments:
 
 Examples:
   ./copy_certs.sh my-server-alias -d immich.lan
-  ./copy_certs.sh another-host --domain nextcloud.com
+  ./copy_certs.sh user@host --domain nextcloud.com
 EOF
     exit 0
 }
