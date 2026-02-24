@@ -3,7 +3,7 @@
 # Copyright (c) 2025. All rights reserved.
 #
 # Name: generate_cert_with_intermediate.sh
-# Version: 1.1.1
+# Version: 1.1.2
 # Author: Mstaaravin
 # Contributors: Developed with assistance from Claude AI
 # Description: Certificate generator with hierarchical CA structure
@@ -108,7 +108,7 @@ PARENT_DOMAIN=""
 # Certificate durations (in days)
 ROOT_CA_DAYS=3650    # 10 years
 INT_CA_DAYS=1825     # 5 years
-HOST_CERT_DAYS=825   # ~2 years
+HOST_CERT_DAYS=1825   # ~2 years
 
 # Key sizes
 ROOT_KEY_SIZE=4096
@@ -620,6 +620,10 @@ EOF
 
 # Main execution flow
 main() {
+    if [[ $# -eq 0 ]]; then
+        show_help
+    fi
+
     echo "=== Certificate Generator with CA → Intermediate → Host hierarchy v${VERSION} ==="
 
     # Parse command-line arguments
