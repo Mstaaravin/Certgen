@@ -16,6 +16,7 @@ This project includes the following scripts, designed to be used together:
 | -------------------------------------- | ------------------------------------------------------------------------ |
 | `certgen.sh`                           | Generates a full certificate hierarchy (Root CA → Intermediate CA → Host). |
 | `copy_certs.sh`                        | Copies host certificates (`.crt`, `.key`, `.toml`) to a remote server.     |
+| `check_certs.sh`                       | Displays validity, dates, CN, and SANs of a given certificate file.        |
 | `install-ca-certificates-universal.sh` | Installs the Root and Intermediate CAs into the system trust store.        |
 | `verify-ca-installation.sh`            | Checks if the custom CA is correctly installed and trusted by the system.  |
 
@@ -40,7 +41,7 @@ All necessary files are created inside the `domains/yourdomain.lan/` directory, 
 
 ```
 cmiranda@lhome01 ~/Projects/git.certgen (main)$ ./certgen.sh -d lan -n owncloud -y
-=== Certificate Generator with CA → Intermediate → Host hierarchy v1.1.1 ===
+=== Certificate Generator with CA → Intermediate → Host hierarchy v1.1.2 ===
 This script will generate certificates organized by domain
 Each domain will have its own CA and certificates structure
 ===========================================================
