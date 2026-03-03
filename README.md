@@ -14,10 +14,11 @@ This project includes the following scripts, designed to be used together:
 
 | Script                                 | Description                                                              |
 | -------------------------------------- | ------------------------------------------------------------------------ |
-| `certgen.sh`                           | Generates a full certificate hierarchy (Root CA → Intermediate CA → Host). |
+| `certgen.sh`                           | Generates a full certificate hierarchy (Root CA → Intermediate CA → Host). Supports `--pfx` to also export a PKCS#12 bundle for Windows. |
 | `copy_certs.sh`                        | Copies host certificates (`.crt`, `.key`, `.toml`) to a remote server.     |
 | `check_certs.sh`                       | Displays validity, dates, CN, and SANs of a given certificate file.        |
 | `install-ca-certificates-universal.sh` | Installs the Root and Intermediate CAs into the system trust store.        |
+| `install-browser-certificates.sh`      | Imports the CA certs into the NSS database (`~/.pki/nssdb`) used by Chrome and Chromium. No root required. |
 | `verify-ca-installation.sh`            | Checks if the custom CA is correctly installed and trusted by the system.  |
 
 ## Common Workflow
@@ -114,6 +115,14 @@ To make browsers and system tools trust your new certificates, install the Root 
 # This command requires sudo privileges
 sudo bash install-ca-certificates-universal.sh -d yourdomain.lan
 ```
+
+For **Chrome and Chromium**, also run the browser-specific installer (no root needed):
+
+```bash
+bash install-browser-certificates.sh -d yourdomain.lan
+```
+
+Then restart the browser. Both scripts are independent — run both for full coverage.
 You can also use the `--url` flag to install certificates from a remote HTTP server instead of a local directory.
 
 <details>
