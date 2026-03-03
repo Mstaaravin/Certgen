@@ -90,8 +90,6 @@
 #     trust relationships between related domains.
 # =================================================================
 
-# Script version
-VERSION="1.1.1"
 
 # Global variables for common data
 COUNTRY="AR"
@@ -140,7 +138,7 @@ handle_error() {
 # Function to display help message
 show_help() {
     cat << EOF
-Certificate Generator with Intermediate CA (v${VERSION})
+Certificate Generator with Intermediate CA
 Usage: $0 [options]
 
 Options:
@@ -669,7 +667,7 @@ main() {
         show_help
     fi
 
-    echo "=== Certificate Generator with CA → Intermediate → Host hierarchy v${VERSION} ==="
+    echo "=== Certificate Generator with CA → Intermediate → Host hierarchy ==="
 
     # Parse command-line arguments
     parse_arguments "$@"
