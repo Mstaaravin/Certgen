@@ -40,6 +40,8 @@
 #   --city CITY               Specify the city (default: City)
 #   --org ORG                 Specify the organization (default: Organization)
 #   -y, --yes                 Non-interactive mode (use defaults)
+#   --pfx                     Also export a PKCS#12 (.pfx) file for Windows
+#   --pfx-password PASS       Password for the .pfx file (default: changeit)
 #
 # EXAMPLES:
 #   # Interactive mode:
@@ -69,6 +71,7 @@
 #   - [host].key:         Host private key
 #   - [host].crt:         Host certificate
 #   - [host]-fullchain.crt: Host certificate + intermediate + root
+#   - [host].pfx:           PKCS#12 bundle for Windows (key + cert + chain)
 #
 # NOTES:
 #   - The ca-chain.crt file contains the intermediate certificate concatenated
@@ -121,6 +124,10 @@ BASE_DIR="domains"
 # Non-interactive mode flag
 NON_INTERACTIVE=false
 
+# PFX export
+GENERATE_PFX=false
+PFX_PASSWORD="changeit"
+
 # Alternative DNS names (space-separated)
 ALT_DNS_NAMES=""
 
@@ -148,6 +155,8 @@ Options:
   --city CITY               Specify the city (default: ${CITY})
   --org ORG                 Specify the organization (default: Host Organization)
   -y, --yes                 Non-interactive mode (use defaults)
+  --pfx                     Also export a PKCS#12 (.pfx) file for Windows
+  --pfx-password PASS       Password for the .pfx file (default: changeit)
 
 Examples:
   # Interactive mode:
@@ -213,6 +222,14 @@ parse_arguments() {
             -y|--yes)
                 NON_INTERACTIVE=true
                 shift
+                ;;
+            --pfx)
+                GENERATE_PFX=true
+                shift
+                ;;
+            --pfx-password)
+                PFX_PASSWORD="$2"
+                shift 2
                 ;;
             *)
                 echo "Unknown option: $1"
@@ -466,6 +483,26 @@ EOF
     echo "Traefik configuration generated: ${toml_file}"
 }
 
+# Generate PFX (PKCS#12) file for Windows
+generate_pfx() {
+    local cert_filename="$1"
+    local cert_dir="$2"
+
+    echo "Generating PFX (PKCS#12) file..."
+
+    openssl pkcs12 -export \
+        -in "${cert_dir}/${cert_filename}.crt" \
+        -inkey "${cert_dir}/${cert_filename}.key" \
+        -certfile "${INT_DIR}/ca-chain.crt" \
+        -out "${cert_dir}/${cert_filename}.pfx" \
+        -name "${cert_filename}" \
+        -passout "pass:${PFX_PASSWORD}" || \
+        handle_error "Failed to generate PFX file"
+
+    echo "PFX file generated: ${cert_dir}/${cert_filename}.pfx"
+    echo "PFX password: ${PFX_PASSWORD}"
+}
+
 # Generate host certificate
 generate_host_certificate() {
     # Skip if no hostname provided
@@ -611,11 +648,19 @@ EOF
     # Generate Traefik configuration file
     generate_traefik_config "${CERT_FILENAME}" "${CERTS_DIR}"
 
+    # Generate PFX if requested
+    if [ "$GENERATE_PFX" = true ]; then
+        generate_pfx "${CERT_FILENAME}" "${CERTS_DIR}"
+    fi
+
     echo "Process completed! Key files are:"
     echo "- Private key: ${CERTS_DIR}/${CERT_FILENAME}.key"
     echo "- Certificate: ${CERTS_DIR}/${CERT_FILENAME}.crt"
     echo "- Full chain (host + intermediate + CA): ${CERTS_DIR}/${CERT_FILENAME}-fullchain.crt"
     echo "- Traefik config: ${CERTS_DIR}/${CERT_FILENAME}.toml"
+    if [ "$GENERATE_PFX" = true ]; then
+        echo "- PFX (Windows): ${CERTS_DIR}/${CERT_FILENAME}.pfx"
+    fi
 }
 
 # Main execution flow
