@@ -14,7 +14,7 @@ This project includes the following scripts, designed to be used together:
 
 | Script                                 | Description                                                              |
 | -------------------------------------- | ------------------------------------------------------------------------ |
-| `certgen.sh`                           | Generates a full certificate hierarchy (Root CA → Intermediate CA → Host). Supports `--pfx` to also export a PKCS#12 bundle for Windows. |
+| `certgen.sh`                           | Generates a full certificate hierarchy (Root CA → Intermediate CA → Host). Supports `--pfx` to also export a PKCS#12 bundle for Windows. The Root CA private key is encrypted with AES-256 — the script prompts for a password interactively. |
 | `copy_certs.sh`                        | Copies host certificates (`.crt`, `.key`, `.toml`) to a remote server.     |
 | `check_certs.sh`                       | Displays validity, dates, CN, and SANs of a given certificate file.        |
 | `install-ca-certificates-universal.sh` | Installs the Root and Intermediate CAs into the system trust store.        |
