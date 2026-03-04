@@ -234,6 +234,10 @@ parse_arguments() {
                 shift
                 ;;
             --pfx-password)
+                if [[ -z "${2:-}" ]]; then
+                    echo "Error: --pfx-password requires a password value"
+                    exit 1
+                fi
                 PFX_PASSWORD="$2"
                 shift 2
                 ;;
