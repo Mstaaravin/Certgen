@@ -76,9 +76,11 @@
 # NOTES:
 #   - The ca-chain.crt file contains the intermediate certificate concatenated
 #     with the root CA certificate. It's used to establish the chain of trust.
-#   - The Root CA private key is encrypted with AES-256. The script will
-#     prompt for a password when creating the CA and again when signing
-#     the Intermediate CA certificate. Intermediate and host keys are not encrypted.
+#   - When creating a new Root CA, the script asks whether to protect the
+#     private key with a password (AES-256). If yes, the password is required
+#     again when signing the Intermediate CA certificate. In non-interactive
+#     mode (-y), the key is generated without a password. Intermediate and
+#     host keys are never encrypted.
 #   - Keep your CA private keys secure. The root CA key should ideally be
 #     stored offline after initial creation.
 #   - This script can create a complete CA infrastructure from scratch
@@ -160,9 +162,10 @@ Options:
   --pfx-password PASS       Password for the .pfx file (default: changeit)
 
 Notes:
-  When creating a new Root CA, the script will prompt for a password to
-  encrypt the Root CA private key (AES-256). The password is required again
-  when signing the Intermediate CA. Intermediate and host keys are not encrypted.
+  When creating a new Root CA, the script asks whether to protect the private
+  key with a password (AES-256). If yes, the password is required again when
+  signing the Intermediate CA. In non-interactive mode (-y), the key is
+  generated without a password. Intermediate and host keys are never encrypted.
 
 Examples:
   # Interactive mode:
@@ -376,14 +379,26 @@ basicConstraints = critical, CA:true
 keyUsage = critical, digitalSignature, cRLSign, keyCertSign
 EOF
 
-        # Generate CA private key (password-protected)
-        echo "Enter a password to protect the Root CA private key:"
-        openssl genpkey -algorithm RSA -aes256 -out ${CA_DIR}/ca.key -outform PEM -pkeyopt rsa_keygen_bits:${ROOT_KEY_SIZE} || \
-            handle_error "Failed to generate root CA private key"
+        # Generate CA private key (optionally password-protected)
+        local protect_key="n"
+        if [ "$NON_INTERACTIVE" = false ]; then
+            read -p "Protect the Root CA private key with a password? (y/N): " protect_key
+        fi
+
+        if [[ "$protect_key" =~ ^[Yy]$ ]]; then
+            echo "Enter a password to protect the Root CA private key:"
+            openssl genpkey -algorithm RSA -aes256 -out ${CA_DIR}/ca.key -outform PEM -pkeyopt rsa_keygen_bits:${ROOT_KEY_SIZE} || \
+                handle_error "Failed to generate root CA private key"
+        else
+            openssl genpkey -algorithm RSA -out ${CA_DIR}/ca.key -outform PEM -pkeyopt rsa_keygen_bits:${ROOT_KEY_SIZE} || \
+                handle_error "Failed to generate root CA private key"
+        fi
         chmod 400 ${CA_DIR}/ca.key
 
-        # Generate self-signed CA certificate (password will be prompted by OpenSSL)
-        echo "Enter the Root CA key password to sign the CA certificate:"
+        # Generate self-signed CA certificate
+        if [[ "$protect_key" =~ ^[Yy]$ ]]; then
+            echo "Enter the Root CA key password to sign the CA certificate:"
+        fi
         openssl req -new -x509 -days ${ROOT_CA_DAYS} -key ${CA_DIR}/ca.key -out ${CA_DIR}/ca.crt -config ${CA_DIR}/ca.conf || \
             handle_error "Failed to generate root CA certificate"
 
@@ -448,7 +463,9 @@ EOF
             handle_error "Failed to generate intermediate CA CSR"
 
         # Sign Intermediate CA CSR with Root CA
-        echo "Enter the Root CA key password to sign the Intermediate CA certificate:"
+        if openssl rsa -in ${CA_DIR}/ca.key -check -noout 2>&1 | grep -q "encrypted"; then
+            echo "Enter the Root CA key password to sign the Intermediate CA certificate:"
+        fi
         openssl x509 -req -in ${INT_DIR}/intermediate.csr \
             -CA ${CA_DIR}/ca.crt -CAkey ${CA_DIR}/ca.key -CAcreateserial \
             -out ${INT_DIR}/intermediate.crt -days ${INT_CA_DAYS} -sha256 \
