@@ -364,12 +364,14 @@ basicConstraints = critical, CA:true
 keyUsage = critical, digitalSignature, cRLSign, keyCertSign
 EOF
 
-        # Generate CA private key
-        openssl genpkey -algorithm RSA -out ${CA_DIR}/ca.key -outform PEM -pkeyopt rsa_keygen_bits:${ROOT_KEY_SIZE} || \
+        # Generate CA private key (password-protected)
+        echo "Enter a password to protect the Root CA private key:"
+        openssl genpkey -algorithm RSA -aes256 -out ${CA_DIR}/ca.key -outform PEM -pkeyopt rsa_keygen_bits:${ROOT_KEY_SIZE} || \
             handle_error "Failed to generate root CA private key"
         chmod 400 ${CA_DIR}/ca.key
 
-        # Generate self-signed CA certificate
+        # Generate self-signed CA certificate (password will be prompted by OpenSSL)
+        echo "Enter the Root CA key password to sign the CA certificate:"
         openssl req -new -x509 -days ${ROOT_CA_DAYS} -key ${CA_DIR}/ca.key -out ${CA_DIR}/ca.crt -config ${CA_DIR}/ca.conf || \
             handle_error "Failed to generate root CA certificate"
 
@@ -434,6 +436,7 @@ EOF
             handle_error "Failed to generate intermediate CA CSR"
 
         # Sign Intermediate CA CSR with Root CA
+        echo "Enter the Root CA key password to sign the Intermediate CA certificate:"
         openssl x509 -req -in ${INT_DIR}/intermediate.csr \
             -CA ${CA_DIR}/ca.crt -CAkey ${CA_DIR}/ca.key -CAcreateserial \
             -out ${INT_DIR}/intermediate.crt -days ${INT_CA_DAYS} -sha256 \
