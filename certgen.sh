@@ -76,6 +76,9 @@
 # NOTES:
 #   - The ca-chain.crt file contains the intermediate certificate concatenated
 #     with the root CA certificate. It's used to establish the chain of trust.
+#   - The Root CA private key is encrypted with AES-256. The script will
+#     prompt for a password when creating the CA and again when signing
+#     the Intermediate CA certificate. Intermediate and host keys are not encrypted.
 #   - Keep your CA private keys secure. The root CA key should ideally be
 #     stored offline after initial creation.
 #   - This script can create a complete CA infrastructure from scratch
@@ -155,6 +158,11 @@ Options:
   -y, --yes                 Non-interactive mode (use defaults)
   --pfx                     Also export a PKCS#12 (.pfx) file for Windows
   --pfx-password PASS       Password for the .pfx file (default: changeit)
+
+Notes:
+  When creating a new Root CA, the script will prompt for a password to
+  encrypt the Root CA private key (AES-256). The password is required again
+  when signing the Intermediate CA. Intermediate and host keys are not encrypted.
 
 Examples:
   # Interactive mode:
